@@ -5,20 +5,201 @@ using Markdown
 using InteractiveUtils
 
 # ╔═╡ 568ed730-9319-11ec-09ca-b1e962cadf22
-using DelimitedFiles, GadgetIO, GadgetUnits, Unitful, UnitfulAstro, HDF5, DataFrames
+using DelimitedFiles, Unitful, UnitfulAstro, HDF5, DataFrames
+
+# ╔═╡ 5ca972c9-548a-445e-ba2e-e38151f7bedf
+######################################################################################
+# Base units
+######################################################################################
+
+begin
+	const L_UNIT = 3.085678e21u"cm"
+	const M_UNIT = 1.989e43u"g"
+	const V_UNIT = 1.0e5u"cm*s^-1"
+end;
+
+# ╔═╡ d3602da9-8263-4638-978e-bb7da9998885
+######################################################################################
+# Dimensions of specific energy
+######################################################################################
+
+@derived_dimension SpecificEnergy Unitful.𝐋^2 * Unitful.𝐓^-2 true;
 
 # ╔═╡ b20de40e-21fe-4d4e-b0dc-fcb0d4ead59e
-#
+######################################################################################
 # As an example we use the low resolution ICs from the AGORA project site
 # https://sites.google.com/site/santacruzcomparisonproject/data
-#
+######################################################################################
+
 begin
     const out_file = "./output/ic_low"
     const SIM_COSMO = false
 end;
 
+# ╔═╡ dd16a119-4f6e-4510-ac4c-17e4ab2fdf80
+"""
+Unit conversion struct.
+
+# Fields
+
+  - `x_cgs::Unitful.Length`: Length, from internal units to ``\\mathrm{cm}``.
+  - `x_cosmo::Unitful.Length`: Length, from internal units to ``\\mathrm{kpc}``.
+  - `x_comoving::Unitful.Length`: Length, from internal units to ``\\mathrm{ckpc}``.
+  - `v_cgs::Unitful.Velocity`: Velocity, from internal units to ``\\mathrm{cm \\, s^{-1}}``.
+  - `v_cosmo::Unitful.Velocity`: Velocity, from internal units to ``\\mathrm{km \\, s^{-1}}``.
+  - `m_cgs::Unitful.Mass`: Mass, from internal units to ``\\mathrm{g}``.
+  - `m_cosmo::Unitful.Mass`: Mass, from internal units to ``\\mathrm{M_\\odot}``.
+  - `t_cgs::Unitful.Time`: Time, from internal units to ``\\mathrm{s}``.
+  - `t_cosmo::Unitful.Time`: Time, from internal units to ``\\mathrm{Myr}``.
+  - `U_cgs::Unitful.Energy`: Specific energy, from internal units to ``\\mathrm{erg \\, g^{-1}}``.
+  - `rho_cgs::Unitful.Density`: Density, from internal units to ``\\mathrm{g \\, cm^{-3}}``.
+  - `P_Pa::Unitful.Pressure`: Pressure, from internal units to ``\\mathrm{Pa}``.
+"""
+struct InternalUnits
+
+    x_cgs::Unitful.Length      # Length, from internal units to cm
+    x_cosmo::Unitful.Length    # Length, from internal units to kpc
+    x_comoving::Unitful.Length # Length, from internal units to ckpc
+
+    v_cgs::Unitful.Velocity    # Velocity, from internal units to cm * s^-1
+    v_cosmo::Unitful.Velocity  # Velocity, from internal units to km * s^-1
+
+    m_cgs::Unitful.Mass        # Mass, from internal units to g
+    m_cosmo::Unitful.Mass      # Mass, from internal units to M⊙
+
+    t_cgs::Unitful.Time        # Time, from internal units to s
+    t_cosmo::Unitful.Time      # Time, from internal units to Myr
+
+    U_cgs::SpecificEnergy      # Specific energy, from internal units to erg * g^-1
+
+    rho_cgs::Unitful.Density   # Density, from internal units to g * cm^-3
+
+    P_Pa::Unitful.Pressure     # Pressure, from internal units to Pa
+
+    """
+        InternalUnits(; <keyword arguments>)
+
+    Constructor for `InternalUnits`.
+
+    # Arguments
+
+      - `l_unit::Unitful.Length=L_UNIT`: Code parameter `UnitLength_in_cm`.
+      - `m_unit::Unitful.Mass=M_UNIT`: Code parameter `UnitMass_in_g`.
+      - `v_unit::Unitful.Velocity=V_UNIT`: Code parameter `UnitVelocity_in_cm_per_s`.
+      - `a0::Float64=1.0`: Cosmological scale factor of the simulation.
+      - `h0::Float64=1.0`: Hubble constant as "little h".
+    """
+    function InternalUnits(;
+        l_unit::Unitful.Length=L_UNIT,
+        m_unit::Unitful.Mass=M_UNIT,
+        v_unit::Unitful.Velocity=V_UNIT,
+        a0::Float64=1.0,
+        h0::Float64=1.0,
+    )
+
+        ##############################################################################
+        # Base units
+        ##############################################################################
+
+        x_cgs = l_unit * a0 / h0
+        x_cosmo = x_cgs |> u"kpc"
+        x_comoving = l_unit / h0 |> u"kpc"
+
+        v_cgs = v_unit * sqrt(a0)
+        v_cosmo = v_cgs |> u"km*s^-1"
+
+        m_cgs = m_unit / h0
+        m_cosmo = m_cgs |> u"Msun"
+
+        ##############################################################################
+        # Derived units
+        ##############################################################################
+
+        # Only used in non-cosmological simulations
+        t_cgs = x_cgs / v_cgs
+        t_cosmo = t_cgs |> u"Myr"
+
+        U_cgs = v_unit^2 |> u"erg*g^-1"
+
+        rho_cgs = m_cgs * x_cgs^-3
+
+        # Thermal pressure (it uses v_unit^2 instead of v_cgs^2, 
+		# which would add an extra factor of a0)
+        P_Pa = v_unit^2 * m_cgs * x_cgs^-3 |> u"Pa"
+
+        new(
+            x_cgs,
+            x_cosmo,
+            x_comoving,
+            v_cgs,
+            v_cosmo,
+            m_cgs,
+            m_cosmo,
+            t_cgs,
+            t_cosmo,
+            U_cgs,
+            rho_cgs,
+            P_Pa,
+        )
+
+    end
+
+end;
+
+# ╔═╡ a8db93bd-b83d-4236-ab15-a51604199ed6
+"""
+Data in the "Header" group of a HDF5 snapshot file.
+
+# Fields
+
+  - `npart::Vector{Int32}`: Number of particles (of each type) included in this file chunk.
+  - `massarr::Vector{Float64}`: Masses of particle types which have a constant mass.
+  - `time::Float64`: The physical time/scale factor.
+  - `z::Float64`: Redshift of the simulation.
+  - `flag_sfr::Int32`: 1 if the simulation was run with star formation, else 0.
+  - `flag_feedback::Int32`: 1 if the simulation was run with stellar feedback, else 0.
+  - `nall::Vector{UInt32}`: Total number of particles (of each type) for this snapshot.
+  - `flag_cooling::Int32`: 1 if the simulation was run with cooling, else 0.
+  - `num_files::Int32`: Number of file chunks per snapshot.	
+  - `omega_0::Float64`: The cosmological density parameter for matter.	
+  - `boxsize::Float64`: Total size of the simulation box.
+  - `omega_l::Float64`: The cosmological density parameter for the cosmological constant.
+  - `h0::Float64`: Hubble parameter.
+  - `flag_stellarage::Int32`: 1 if the simulation was run with stellar age, else 0.
+  - `flag_metals::Int32`: 1 if the simulation was run with metals, else 0.
+  - `npartTotalHighWord::Vector{UInt32}`: If Npart > 1584^3 (> 2^32) this contains a high bit: ntotal = npartTotalHighWord * 2^32 + nall.
+  - `flag_entropy_instead_u::Int32`: 1 if the snapshot U field contains entropy instead of internal energy, else 0.
+  - `flag_doubleprecision::Int32`: 1 if the snapshot is in double precision, else 0.
+  - `flag_ic_info::Int32`: 1 if the initial snapshot file contains an info block, else 0.
+  - `lpt_scalingfactor::Float32`: Factor to use second order IC generation.
+  - `fill::Vector{Int32}`: The HEAD block needs to be filled with zeros to have a size of 256 bytes.
+"""
+@kwdef mutable struct SnapshotHeader
+	npart::Vector{Int32}
+	massarr::Vector{Float64}
+	time::Float64	
+	z::Float64	
+	flag_sfr::Int32	
+	flag_feedback::Int32	
+	nall::Vector{UInt32}
+	flag_cooling::Int32	
+	num_files::Int32	
+	omega_0::Float64	
+	boxsize::Float64	
+	omega_l::Float64	
+	h0::Float64	
+	flag_stellarage::Int32
+	flag_metals::Int32	
+	npartTotalHighWord::Vector{UInt32}	
+	flag_entropy_instead_u::Int32	
+	flag_doubleprecision::Int32	
+	flag_ic_info::Int32	
+	lpt_scalingfactor::Float32	
+	fill::Vector{Int32}	
+end;
+
 # ╔═╡ 6647922f-bcc9-4438-a454-d8dba7a2d103
-#
+######################################################################################
 # Read IC files which are in the following format:
 #
 # Velocity: km/s
@@ -29,7 +210,8 @@ end;
 # Dark matter halo (halo.dat):  x, y, z, vx, vy, vz, mdark
 # Stellar disk     (disk.dat):  x, y, z, vx, vy, vz, mdisk
 # Stellar bulge    (bulge.dat): x, y, z, vx, vy, vz, mbulge
-#
+######################################################################################
+
 begin
     rawIC_type0 = readdlm("./AGORA_ICs/LOW/gas.dat")
     rawIC_type1 = readdlm("./AGORA_ICs/LOW/halo.dat")
@@ -43,192 +225,158 @@ begin
 end;
 
 # ╔═╡ f3cc08bd-b2c6-42a2-a757-5ef4e7c685e9
-#
+######################################################################################
 # Header
-# Fields: https://ludwigboess.github.io/GadgetIO.jl/stable/file_infos/
-#
+######################################################################################
+
 header = SnapshotHeader(
-    Int32[s0, s1, s2, s3, 0, 0],
-    [
-        rawIC_type0[1, 7], 
-        rawIC_type1[1, 7], 
-        rawIC_type2[1, 7], 
+    npart                  = Int32[s0, s1, s2, s3, 0, 0],
+    massarr                = [
+        rawIC_type0[1, 7],
+        rawIC_type1[1, 7],
+        rawIC_type2[1, 7],
         rawIC_type3[1, 7],
         0.0,
         0.0,
-    ] .* 10^9*u"Msun" ./ GadgetPhysicalUnits(a_scale = 1.0, hpar = 1.0).m_msun,
-    0.0,
-    0.0,
-	convert(Int32, 1),
-	convert(Int32, 1),
-	UInt32[s0, s1, s2, s3, 0, 0],
-	convert(Int32, 1),
-	convert(Int32, 1),
-	0.0,
-	0.0,
-	0.0,
-	1.0,
-	convert(Int32, 1),
-	convert(Int32, 1),
-	UInt32[0, 0, 0, 0, 0, 0],
-	convert(Int32, 0),
-	convert(Int32, 0),
-	convert(Int32, 0),
-	0.0f0,
-	Int32[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ] .* 10^9*u"Msun" ./ (M_UNIT |> u"Msun"),
+    time                   = 0.0,
+    z                      = 0.0,
+	flag_sfr               = convert(Int32, 1),
+	flag_feedback          = convert(Int32, 1),
+	nall                   = UInt32[s0, s1, s2, s3, 0, 0],
+	flag_cooling           = convert(Int32, 1),
+	num_files              = convert(Int32, 1),
+	omega_0                = 0.0,
+	boxsize                = 0.0,
+	omega_l                = 0.0,
+	h0                     = 1.0,
+	flag_stellarage        = convert(Int32, 1),
+	flag_metals            = convert(Int32, 1),
+	npartTotalHighWord     = UInt32[0, 0, 0, 0, 0, 0],
+	flag_entropy_instead_u = convert(Int32, 0),
+	flag_doubleprecision   = convert(Int32, 0),
+	flag_ic_info           = convert(Int32, 0),
+	lpt_scalingfactor      = 0.0f0,
+	fill                   = Int32[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 );
 
 # ╔═╡ a0f96fb1-8fda-410f-8861-563803f3798e
-#
+######################################################################################
 # Unit struct
-#
-# Fields: https://ludwigboess.github.io/GadgetUnits.jl/stable/conversion_structs/
-#
-GU = GadgetPhysicalUnits(a_scale = SIM_COSMO ? header.time : 1.0, hpar = header.h0);
+######################################################################################
+
+IU = InternalUnits(; a0=SIM_COSMO ? header.time : 1.0, h0=header.h0);
 
 # ╔═╡ 108bb88d-0d89-4601-a2b2-3af50fcd1f3b
-# 
-# Write the ICs in the GADGET binary format (SnapFormat = 2)
+######################################################################################
+# Write the ICs in HDF5 format for GADGET (SnapFormat = 3)
 #
-# Within each block, the particles will be ordered according to their particle type,  
-# i.e. gas particles will come first (type 0), then DM (type 1) particles, followed 
+# Within each block, the particles will be ordered according to their particle type,
+# i.e. gas particles will come first (type 0), then DM (type 1) particles, followed
 # by disk (type 2) particles, and so on:
 #
 # gas   => 0
 # halo  => 1
 # disk  => 2
 # bulge => 3
-#
+######################################################################################
+
 begin
 	# Positions
     pos = convert(
-		Array{Float32,2}, 
+		Array{Float32,2},
 		vcat(
             rawIC_type0[:, 1:3],
 			rawIC_type1[:, 1:3],
 			rawIC_type2[:, 1:3],
 			rawIC_type3[:, 1:3],
-		)' .* u"kpc" ./ GU.x_physical,
+		)' .* u"kpc" ./ IU.x_cosmo,
 	)
 
 	# Velocities
 	vel = convert(
-		Array{Float32,2}, 
+		Array{Float32,2},
 		vcat(
 			rawIC_type0[:, 4:6],
 			rawIC_type1[:, 4:6],
 			rawIC_type2[:, 4:6],
 			rawIC_type3[:, 4:6],
-		)' .* u"km/s" ./ GU.v_physical,
+		)' .* u"km*s^-1" ./ IU.v_cosmo,
 	)
 
 	# Internal energy (for gas particles only)
-	u_factor = uconvert(u"erg/Msun", 1.0*u"km/s"^2)
+	u_factor = uconvert(u"erg*g^-1", 1.0*u"km*s^-1"^2)
 	u = convert(
-		Array{Float32,1}, 
-		rawIC_type0[:, 8] .* u_factor ./ (GU.E_cgs / GU.m_msun),
+		Array{Float32,1},
+		rawIC_type0[:, 8] .* u_factor ./ IU.U_cgs,
 	)
 
 	# IDs
-	id = convert(Array{UInt32,1}, 1:(s0+s1+s2+s3))
+	id = convert(Array{UInt32,1}, 1:(s0 + s1 + s2 + s3))
 
-	# Write output IC file
-	open(out_file, "w") do f
-		write_header(f, header)
-		write_block(f, pos, "POS")
-		write_block(f, vel, "VEL")
-		write_block(f, id, "ID")
-		write_block(f, u, "U")
+	h5open(out_file * ".hdf5", "w") do fh5
+		g0 = create_group(fh5, "PartType0")
+		g1 = create_group(fh5, "PartType1")
+		g2 = create_group(fh5, "PartType2")
+		g3 = create_group(fh5, "PartType3")
+		head = create_group(fh5, "Header")
+	
+		g0["Coordinates"] = collect(pos[:, 1:s0]')
+		g1["Coordinates"] = collect(pos[:, (s0 + 1):(s0 + s1)]')
+		g2["Coordinates"] = collect(pos[:, (s0 + s1 + 1):(s0 + s1 + s2)]')
+		g3["Coordinates"] = collect(pos[:, (s0 + s1 + s2 + 1):(s0 + s1 + s2 + s3)]')
+	
+		g0["Velocities"] = collect(vel[:, 1:s0]')
+		g1["Velocities"] = collect(vel[:, (s0 + 1):(s0 + s1)]')
+		g2["Velocities"] = collect(vel[:, (s0 + s1 + 1):(s0 + s1 + s2)]')
+		g3["Velocities"] = collect(vel[:, (s0 + s1 + s2  + 1):(s0 + s1 + s2 + s3)]')
+	
+		g0["ParticleIDs"] = id[1:s0]
+		g1["ParticleIDs"] = id[(s0 + 1):(s0 + s1)]
+		g2["ParticleIDs"] = id[(s0 + s1 + 1):(s0 + s1 + s2)]
+		g3["ParticleIDs"] = id[(s0 + s1 + s2 + 1):(s0 + s1 + s2 + s3)]
+	
+		write_attribute(head, "NumPart_ThisFile", header.npart)
+		write_attribute(head, "NumPart_Total", header.nall)
+		write_attribute(head, "MassTable", header.massarr)
+		write_attribute(head, "Time", header.time)
+		write_attribute(head, "Redshift", header.z)
+		write_attribute(head, "BoxSize", header.boxsize)
+		write_attribute(head, "NumFilesPerSnapshot", header.num_files)
+		write_attribute(head, "NumPart_Total_HighWord", header.npartTotalHighWord)
+		write_attribute(head, "Omega0", header.omega_0)
+	    write_attribute(head, "OmegaLambda", header.omega_l)
+	    write_attribute(head, "HubbleParam", header.h0)
+		write_attribute(head, "Flag_Sfr", header.flag_sfr)
+		write_attribute(head, "Flag_Cooling", header.flag_cooling)
+		write_attribute(head, "Flag_StellarAge", header.flag_stellarage)
+		write_attribute(head, "Flag_Feedback", header.flag_feedback)
+		write_attribute(head, "Flag_DoublePrecision", header.flag_doubleprecision)
+		write_attribute(head, "Flag_Metals", header.flag_metals)
 	end
-end;
-
-# ╔═╡ 6ea6a52d-1ee4-4069-a5ca-4b0021a7b69c
-#
-# Write the ICs in HDF5 format for GADGET (SnapFormat = 3)
-#
-h5open(out_file * ".hdf5", "w") do fh5
-	g0 = create_group(fh5, "PartType0")
-	g1 = create_group(fh5, "PartType1")
-	g2 = create_group(fh5, "PartType2")
-	g3 = create_group(fh5, "PartType3")
-	head = create_group(fh5, "Header")
-		
-	g0["Coordinates"] = collect(pos[:, 1:s0]')
-	g1["Coordinates"] = collect(pos[:, (s0+1):(s0+s1)]')
-	g2["Coordinates"] = collect(pos[:, (s0+s1+1):(s0+s1+s2)]')
-	g3["Coordinates"] = collect(pos[:, (s0+s1+s2+1):(s0+s1+s2+s3)]')
-		
-	g0["Velocities"] = collect(vel[:, 1:s0]')
-	g1["Velocities"] = collect(vel[:, (s0+1):(s0+s1)]')
-	g2["Velocities"] = collect(vel[:, (s0+s1+1):(s0+s1+s2)]')
-	g3["Velocities"] = collect(vel[:, (s0+s1+s2+1):(s0+s1+s2+s3)]')
-
-	g0["ParticleIDs"] = id[1:s0]
-	g1["ParticleIDs"] = id[(s0+1):(s0+s1)]
-	g2["ParticleIDs"] = id[(s0+s1+1):(s0+s1+s2)]
-	g3["ParticleIDs"] = id[(s0+s1+s2+1):(s0+s1+s2+s3)]
-		
-	write_attribute(head, "NumPart_ThisFile", header.npart)
-	write_attribute(head, "NumPart_Total", header.nall)
-	write_attribute(head, "MassTable", header.massarr)
-	write_attribute(head, "Time", header.time)
-	write_attribute(head, "Redshift", header.z)
-	write_attribute(head, "BoxSize", header.boxsize)
-	write_attribute(head, "NumFilesPerSnapshot", header.num_files)
-	write_attribute(head, "NumPart_Total_HighWord", header.npartTotalHighWord)
-	write_attribute(head, "Omega0", header.omega_0)
-    write_attribute(head, "OmegaLambda", header.omega_l)
-    write_attribute(head, "HubbleParam", header.h0)
-	write_attribute(head, "Flag_Sfr", header.flag_sfr)
-	write_attribute(head, "Flag_Cooling", header.flag_cooling)
-	write_attribute(head, "Flag_StellarAge", header.flag_stellarage)
-	write_attribute(head, "Flag_Feedback", header.flag_feedback)
-	write_attribute(head, "Flag_DoublePrecision", header.flag_doubleprecision)
-	write_attribute(head, "Flag_Metals", header.flag_metals)
 end;
 
 # ╔═╡ 39f2147d-ac35-4b14-ade6-ee07d17f84c6
-#
+######################################################################################
 # Consistency test
-#
-begin
-	
-	info_pos = InfoLine("POS", Float32, 3, Int32[1, 1, 1, 1, 0, 0])
-	input_pos = read_block(out_file, "POS", info = info_pos, parttype = 0)
-	
-	info_vel = InfoLine("VEL", Float32, 3, Int32[1, 1, 1, 1, 0, 0])
-	input_vel = read_block(out_file, "VEL", info = info_vel, parttype = 0)
-	
-	@assert all(isapprox.(
-		rawIC_type0[150:160, 2], 
-		ustrip(input_pos[2, 150:160] * GU.x_physical), 
-		rtol = 10^-5,
-	)) && all(isapprox.(
-		rawIC_type0[150:160, 5], 
-		ustrip(input_vel[2, 150:160] * GU.v_physical), 
-		rtol = 10^-5,
-	))
+######################################################################################
 
-	h5open(out_file * ".hdf5", "r") do fh5
-		hdf5_pos = fh5["PartType0/Coordinates"][150:160, 2] * GU.x_physical
-		hdf5_vel = fh5["PartType0/Velocities"][150:160, 2] * GU.v_physical
+h5open(out_file * ".hdf5", "r") do fh5
+	hdf5_pos = fh5["PartType0/Coordinates"][150:160, 2] * IU.x_cosmo
+	hdf5_vel = fh5["PartType0/Velocities"][150:160, 2] * IU.v_cosmo
 
-		@assert all(
-			isapprox.(rawIC_type0[150:160, 2], ustrip(hdf5_pos), rtol = 10^-5)
-		) && all(
-			isapprox.(rawIC_type0[150:160, 5], ustrip(hdf5_vel), rtol = 10^-5)
-		)
-	end
-
-end
+	@assert all(
+		isapprox.(rawIC_type0[150:160, 2], ustrip(hdf5_pos), rtol = 10^-5)
+	) && all(
+		isapprox.(rawIC_type0[150:160, 5], ustrip(hdf5_vel), rtol = 10^-5)
+	)
+end;
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
-GadgetIO = "826b50da-1eb7-48f3-bd4b-d2350582c309"
-GadgetUnits = "08630afb-492b-4c1a-9729-2a116101b53a"
 HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 UnitfulAstro = "6112ee07-acf9-5e0f-b108-d242c714bf9f"
@@ -236,8 +384,6 @@ UnitfulAstro = "6112ee07-acf9-5e0f-b108-d242c714bf9f"
 [compat]
 DataFrames = "~1.6.1"
 DelimitedFiles = "~1.9.1"
-GadgetIO = "~0.7.12"
-GadgetUnits = "~0.2.3"
 HDF5 = "~0.16.12"
 Unitful = "~1.19.0"
 UnitfulAstro = "~1.2.0"
@@ -249,31 +395,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.10.1"
 manifest_format = "2.0"
-project_hash = "479786d5b7027035042a2ec36de615d2b48bf3d1"
-
-[[deps.ANSIColoredPrinters]]
-git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
-uuid = "a4c015fc-c6ff-483c-b24f-f7ea428134e9"
-version = "0.0.1"
-
-[[deps.Accessors]]
-deps = ["CompositionsBase", "ConstructionBase", "Dates", "InverseFunctions", "LinearAlgebra", "MacroTools", "Test"]
-git-tree-sha1 = "cb96992f1bec110ad211b7e410e57ddf7944c16f"
-uuid = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
-version = "0.1.35"
-
-    [deps.Accessors.extensions]
-    AccessorsAxisKeysExt = "AxisKeys"
-    AccessorsIntervalSetsExt = "IntervalSets"
-    AccessorsStaticArraysExt = "StaticArrays"
-    AccessorsStructArraysExt = "StructArrays"
-
-    [deps.Accessors.weakdeps]
-    AxisKeys = "94b1ba4f-4ee9-5380-92f1-94cde586c3c5"
-    IntervalSets = "8197267c-284f-5f27-9208-e0e47529a953"
-    Requires = "ae029012-a4dd-5104-9daa-d747884805df"
-    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
-    StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
+project_hash = "36ebcfe09c92e60453b3372d2713b0d2f8ceea9a"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -284,21 +406,6 @@ uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
 
 [[deps.Base64]]
 uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
-
-[[deps.ChainRulesCore]]
-deps = ["Compat", "LinearAlgebra"]
-git-tree-sha1 = "ad25e7d21ce10e01de973cdc68ad0f850a953c52"
-uuid = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-version = "1.21.1"
-weakdeps = ["SparseArrays"]
-
-    [deps.ChainRulesCore.extensions]
-    ChainRulesCoreSparseArraysExt = "SparseArrays"
-
-[[deps.CommonSolve]]
-git-tree-sha1 = "0eee5eb66b1cf62cd6ad1b460238e60e4b09400c"
-uuid = "38540f10-b2f7-11e9-35d8-d573e4eb0ff2"
-version = "0.2.4"
 
 [[deps.Compat]]
 deps = ["TOML", "UUIDs"]
@@ -314,35 +421,6 @@ weakdeps = ["Dates", "LinearAlgebra"]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
 version = "1.1.0+0"
-
-[[deps.CompositionsBase]]
-git-tree-sha1 = "802bb88cd69dfd1509f6670416bd4434015693ad"
-uuid = "a33af91c-f02d-484b-be07-31d278c5ca2b"
-version = "0.1.2"
-weakdeps = ["InverseFunctions"]
-
-    [deps.CompositionsBase.extensions]
-    CompositionsBaseInverseFunctionsExt = "InverseFunctions"
-
-[[deps.ConstructionBase]]
-deps = ["LinearAlgebra"]
-git-tree-sha1 = "c53fc348ca4d40d7b371e71fd52251839080cbc9"
-uuid = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
-version = "1.5.4"
-
-    [deps.ConstructionBase.extensions]
-    ConstructionBaseIntervalSetsExt = "IntervalSets"
-    ConstructionBaseStaticArraysExt = "StaticArrays"
-
-    [deps.ConstructionBase.weakdeps]
-    IntervalSets = "8197267c-284f-5f27-9208-e0e47529a953"
-    StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
-
-[[deps.Cosmology]]
-deps = ["QuadGK", "Unitful", "UnitfulAstro"]
-git-tree-sha1 = "27996feb4391e8373417471feaa8638da773e589"
-uuid = "76746363-e552-5dba-9a5a-cef6fa9cc5ab"
-version = "1.0.2"
 
 [[deps.Crayons]]
 git-tree-sha1 = "249fe38abf76d48563e2f4556bebd215aa317e15"
@@ -381,28 +459,6 @@ git-tree-sha1 = "9e2f36d3c96a820c678f2f1f1782582fcf685bae"
 uuid = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 version = "1.9.1"
 
-[[deps.Distributed]]
-deps = ["Random", "Serialization", "Sockets"]
-uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
-
-[[deps.DocStringExtensions]]
-deps = ["LibGit2"]
-git-tree-sha1 = "b19534d1895d702889b219c382a6e18010797f0b"
-uuid = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
-version = "0.8.6"
-
-[[deps.Documenter]]
-deps = ["ANSIColoredPrinters", "Base64", "Dates", "DocStringExtensions", "IOCapture", "InteractiveUtils", "JSON", "LibGit2", "Logging", "Markdown", "REPL", "Test", "Unicode"]
-git-tree-sha1 = "39fd748a73dce4c05a9655475e437170d8fb1b67"
-uuid = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-version = "0.27.25"
-
-[[deps.DocumenterTools]]
-deps = ["Base64", "DocStringExtensions", "LibGit2"]
-git-tree-sha1 = "58db9d1c626de92318ee35cbaf466739f4b5a09a"
-uuid = "35a29f4d-8980-5a13-9543-d66fff28ecb8"
-version = "0.1.2"
-
 [[deps.Downloads]]
 deps = ["ArgTools", "FileWatching", "LibCURL", "NetworkOptions"]
 uuid = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
@@ -415,18 +471,6 @@ uuid = "7b1f6079-737a-58dc-b8bc-7a2ca5c1b5ee"
 deps = ["Random"]
 uuid = "9fa8497b-333b-5362-9e8d-4d0656e87820"
 
-[[deps.GadgetIO]]
-deps = ["Dates", "DelimitedFiles", "Documenter", "DocumenterTools", "Downloads", "LinearAlgebra", "PrecompileTools", "Printf", "ProgressMeter", "Statistics", "Test"]
-git-tree-sha1 = "cd1d7e231553f72aad5dfb36496b6488d7feb07d"
-uuid = "826b50da-1eb7-48f3-bd4b-d2350582c309"
-version = "0.7.12"
-
-[[deps.GadgetUnits]]
-deps = ["Cosmology", "Documenter", "DocumenterTools", "Downloads", "GadgetIO", "Roots", "Test", "Unitful", "UnitfulAstro"]
-git-tree-sha1 = "1a8885dfbe08bc3b8d27d6684c8acf8216f40fb3"
-uuid = "08630afb-492b-4c1a-9729-2a116101b53a"
-version = "0.2.4"
-
 [[deps.HDF5]]
 deps = ["Compat", "HDF5_jll", "Libdl", "Mmap", "Printf", "Random", "Requires", "UUIDs"]
 git-tree-sha1 = "114e20044677badbc631ee6fdc80a67920561a29"
@@ -434,22 +478,16 @@ uuid = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
 version = "0.16.16"
 
 [[deps.HDF5_jll]]
-deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LLVMOpenMP_jll", "LazyArtifacts", "LibCURL_jll", "Libdl", "MPICH_jll", "MPIPreferences", "MPItrampoline_jll", "MicrosoftMPI_jll", "OpenMPI_jll", "OpenSSL_jll", "TOML", "Zlib_jll", "libaec_jll"]
-git-tree-sha1 = "38c8874692d48d5440d5752d6c74b0c6b0b60739"
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LazyArtifacts", "LibCURL_jll", "Libdl", "MPICH_jll", "MPIPreferences", "MPItrampoline_jll", "MicrosoftMPI_jll", "OpenMPI_jll", "OpenSSL_jll", "TOML", "Zlib_jll", "libaec_jll"]
+git-tree-sha1 = "e4591176488495bf44d7456bd73179d87d5e6eab"
 uuid = "0234f1f7-429e-5d53-9886-15a909be8d59"
-version = "1.14.2+1"
+version = "1.14.3+1"
 
 [[deps.Hwloc_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "ca0f6bf568b4bfc807e7537f081c81e35ceca114"
 uuid = "e33a78d0-f292-5ffc-b300-72abe9b543c8"
 version = "2.10.0+0"
-
-[[deps.IOCapture]]
-deps = ["Logging", "Random"]
-git-tree-sha1 = "8b72179abc660bfab5e28472e019392b97d0985c"
-uuid = "b5f81e59-6552-4d32-b1f0-c071b021bf89"
-version = "0.2.4"
 
 [[deps.InlineStrings]]
 deps = ["Parsers"]
@@ -460,12 +498,6 @@ version = "1.4.0"
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
 uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
-
-[[deps.InverseFunctions]]
-deps = ["Test"]
-git-tree-sha1 = "68772f49f54b479fa88ace904f6127f0a3bb2e46"
-uuid = "3587e190-3f89-42d0-90ee-14403ec27112"
-version = "0.1.12"
 
 [[deps.InvertedIndices]]
 git-tree-sha1 = "0dc7b50b8d436461be01300fd8cd45aa0274b038"
@@ -482,18 +514,6 @@ deps = ["Artifacts", "Preferences"]
 git-tree-sha1 = "7e5d6779a1e09a36db2a7b6cff50942a0a7d0fca"
 uuid = "692b3bcd-3c85-4b1f-b108-f13ce0eb3210"
 version = "1.5.0"
-
-[[deps.JSON]]
-deps = ["Dates", "Mmap", "Parsers", "Unicode"]
-git-tree-sha1 = "31e996f0a15c7b280ba9f76636b3ff9e2ae58c9a"
-uuid = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
-version = "0.21.4"
-
-[[deps.LLVMOpenMP_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "d986ce2d884d49126836ea94ed5bfb0f12679713"
-uuid = "1d63c593-3942-5779-bab2-d838dc0a180e"
-version = "15.0.7+0"
 
 [[deps.LaTeXStrings]]
 git-tree-sha1 = "50901ebc375ed41dbf8058da26f9de442febbbec"
@@ -556,12 +576,6 @@ git-tree-sha1 = "77c3bd69fdb024d75af38713e883d0f249ce19c2"
 uuid = "f1f71cc9-e9ae-5b93-9b94-4fe0e1ad3748"
 version = "5.3.2+0"
 
-[[deps.MacroTools]]
-deps = ["Markdown", "Random"]
-git-tree-sha1 = "2fa9ee3e63fd3a4f7a9a4f4744a52f4856de82df"
-uuid = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
-version = "0.5.13"
-
 [[deps.Markdown]]
 deps = ["Base64"]
 uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
@@ -600,10 +614,10 @@ uuid = "4536629a-c528-5b80-bd46-f80d51c5b363"
 version = "0.3.23+4"
 
 [[deps.OpenMPI_jll]]
-deps = ["Artifacts", "CompilerSupportLibraries_jll", "Hwloc_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "MPIPreferences", "PMIx_jll", "TOML", "Zlib_jll", "libevent_jll", "prrte_jll"]
-git-tree-sha1 = "f46caf663e069027a06942d00dced37f1eb3d8ad"
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "MPIPreferences", "TOML"]
+git-tree-sha1 = "e25c1778a98e34219a00455d6e4384e017ea9762"
 uuid = "fe0851c0-eecd-5654-98d4-656369965a5c"
-version = "5.0.2+0"
+version = "4.1.6+0"
 
 [[deps.OpenSSL_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -615,12 +629,6 @@ version = "3.0.13+0"
 git-tree-sha1 = "dfdf5519f235516220579f949664f1bf44e741c5"
 uuid = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 version = "1.6.3"
-
-[[deps.PMIx_jll]]
-deps = ["Artifacts", "Hwloc_jll", "JLLWrappers", "Libdl", "Zlib_jll", "libevent_jll"]
-git-tree-sha1 = "8b3b19351fa24791f94d7ae85faf845ca1362541"
-uuid = "32165bc3-0280-59bc-8c0b-c33b6203efab"
-version = "4.2.7+0"
 
 [[deps.Parsers]]
 deps = ["Dates", "PrecompileTools", "UUIDs"]
@@ -661,18 +669,6 @@ version = "2.3.1"
 deps = ["Unicode"]
 uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 
-[[deps.ProgressMeter]]
-deps = ["Distributed", "Printf"]
-git-tree-sha1 = "00099623ffee15972c16111bcf84c58a0051257c"
-uuid = "92933f4c-e287-5a05-a399-4b506db050ca"
-version = "1.9.0"
-
-[[deps.QuadGK]]
-deps = ["DataStructures", "LinearAlgebra"]
-git-tree-sha1 = "9b23c31e76e333e6fb4c1595ae6afa74966a729e"
-uuid = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
-version = "2.9.4"
-
 [[deps.REPL]]
 deps = ["InteractiveUtils", "Markdown", "Sockets", "Unicode"]
 uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
@@ -691,24 +687,6 @@ deps = ["UUIDs"]
 git-tree-sha1 = "838a3a4188e2ded87a4f9f184b4b0d78a1e91cb7"
 uuid = "ae029012-a4dd-5104-9daa-d747884805df"
 version = "1.3.0"
-
-[[deps.Roots]]
-deps = ["Accessors", "ChainRulesCore", "CommonSolve", "Printf"]
-git-tree-sha1 = "754acd3031a9f2eaf6632ba4850b1c01fe4460c1"
-uuid = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
-version = "2.1.2"
-
-    [deps.Roots.extensions]
-    RootsForwardDiffExt = "ForwardDiff"
-    RootsIntervalRootFindingExt = "IntervalRootFinding"
-    RootsSymPyExt = "SymPy"
-    RootsSymPyPythonCallExt = "SymPyPythonCall"
-
-    [deps.Roots.weakdeps]
-    ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
-    IntervalRootFinding = "d2bf35a9-74e0-55ec-b149-d360ff49b807"
-    SymPy = "24249f21-da20-56a4-8eb1-6a02cf4ae2e6"
-    SymPyPythonCall = "bc8888f7-b21e-4b7c-a06a-5d9c9496438c"
 
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
@@ -775,10 +753,6 @@ deps = ["ArgTools", "SHA"]
 uuid = "a4e569a6-e804-4fa4-b0f3-eef7a1d5b13e"
 version = "1.10.0"
 
-[[deps.Test]]
-deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
-uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-
 [[deps.UUIDs]]
 deps = ["Random", "SHA"]
 uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
@@ -791,11 +765,14 @@ deps = ["Dates", "LinearAlgebra", "Random"]
 git-tree-sha1 = "3c793be6df9dd77a0cf49d80984ef9ff996948fa"
 uuid = "1986cc42-f94f-5a68-af5c-568840ba703d"
 version = "1.19.0"
-weakdeps = ["ConstructionBase", "InverseFunctions"]
 
     [deps.Unitful.extensions]
     ConstructionBaseUnitfulExt = "ConstructionBase"
     InverseFunctionsUnitfulExt = "InverseFunctions"
+
+    [deps.Unitful.weakdeps]
+    ConstructionBase = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
+    InverseFunctions = "3587e190-3f89-42d0-90ee-14403ec27112"
 
 [[deps.UnitfulAngles]]
 deps = ["Dates", "Unitful"]
@@ -825,12 +802,6 @@ deps = ["Artifacts", "Libdl"]
 uuid = "8e850b90-86db-534c-a0d3-1478176c7d93"
 version = "5.8.0+1"
 
-[[deps.libevent_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "OpenSSL_jll"]
-git-tree-sha1 = "f04ec6d9a186115fb38f858f05c0c4e1b7fc9dcb"
-uuid = "1080aeaf-3a6a-583e-a51c-c537b09f60ec"
-version = "2.1.13+1"
-
 [[deps.nghttp2_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "8e850ede-7688-5339-a07c-302acd2aaf8d"
@@ -840,22 +811,19 @@ version = "1.52.0+1"
 deps = ["Artifacts", "Libdl"]
 uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 version = "17.4.0+2"
-
-[[deps.prrte_jll]]
-deps = ["Artifacts", "Hwloc_jll", "JLLWrappers", "Libdl", "PMIx_jll", "libevent_jll"]
-git-tree-sha1 = "5adb2d7a18a30280feb66cad6f1a1dfdca2dc7b0"
-uuid = "eb928a42-fffd-568d-ab9c-3f5d54fc65b9"
-version = "3.0.2+0"
 """
 
 # ╔═╡ Cell order:
 # ╠═568ed730-9319-11ec-09ca-b1e962cadf22
+# ╠═5ca972c9-548a-445e-ba2e-e38151f7bedf
+# ╠═d3602da9-8263-4638-978e-bb7da9998885
 # ╠═b20de40e-21fe-4d4e-b0dc-fcb0d4ead59e
+# ╠═dd16a119-4f6e-4510-ac4c-17e4ab2fdf80
+# ╠═a8db93bd-b83d-4236-ab15-a51604199ed6
 # ╠═6647922f-bcc9-4438-a454-d8dba7a2d103
-# ╠═f3cc08bd-b2c6-42a2-a757-5ef4e7c685e9
 # ╠═a0f96fb1-8fda-410f-8861-563803f3798e
+# ╠═f3cc08bd-b2c6-42a2-a757-5ef4e7c685e9
 # ╠═108bb88d-0d89-4601-a2b2-3af50fcd1f3b
-# ╠═6ea6a52d-1ee4-4069-a5ca-4b0021a7b69c
 # ╠═39f2147d-ac35-4b14-ade6-ee07d17f84c6
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
