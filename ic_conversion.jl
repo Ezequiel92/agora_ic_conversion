@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.38
+# v0.19.43
 
 using Markdown
 using InteractiveUtils
@@ -8,28 +8,28 @@ using InteractiveUtils
 using DelimitedFiles, Unitful, UnitfulAstro, HDF5, DataFrames
 
 # ╔═╡ 5ca972c9-548a-445e-ba2e-e38151f7bedf
-######################################################################################
+#####################################################################################
 # Base units
-######################################################################################
+#####################################################################################
 
 begin
-	const L_UNIT = 3.085678e21u"cm"
-	const M_UNIT = 1.989e43u"g"
-	const V_UNIT = 1.0e5u"cm*s^-1"
+	const ILLUSTRIS_L_UNIT = 3.085678e21u"cm"
+	const ILLUSTRIS_M_UNIT = 1.989e43u"g"
+	const ILLUSTRIS_V_UNIT = 1.0e5u"cm*s^-1"
 end;
 
 # ╔═╡ d3602da9-8263-4638-978e-bb7da9998885
-######################################################################################
+#####################################################################################
 # Dimensions of specific energy
-######################################################################################
+#####################################################################################
 
 @derived_dimension SpecificEnergy Unitful.𝐋^2 * Unitful.𝐓^-2 true;
 
 # ╔═╡ b20de40e-21fe-4d4e-b0dc-fcb0d4ead59e
-######################################################################################
+#####################################################################################
 # As an example we use the low resolution ICs from the AGORA project site
 # https://sites.google.com/site/santacruzcomparisonproject/data
-######################################################################################
+#####################################################################################
 
 begin
     const out_file = "./output/ic_low"
@@ -83,23 +83,23 @@ struct InternalUnits
 
     # Arguments
 
-      - `l_unit::Unitful.Length=L_UNIT`: Code parameter `UnitLength_in_cm`.
-      - `m_unit::Unitful.Mass=M_UNIT`: Code parameter `UnitMass_in_g`.
-      - `v_unit::Unitful.Velocity=V_UNIT`: Code parameter `UnitVelocity_in_cm_per_s`.
+      - `l_unit::Unitful.Length=ILLUSTRIS_L_UNIT`: Code parameter `UnitLength_in_cm`.
+      - `m_unit::Unitful.Mass=ILLUSTRIS_M_UNIT`: Code parameter `UnitMass_in_g`.
+      - `v_unit::Unitful.Velocity=ILLUSTRIS_V_UNIT`: Code parameter `UnitVelocity_in_cm_per_s`.
       - `a0::Float64=1.0`: Cosmological scale factor of the simulation.
       - `h0::Float64=1.0`: Hubble constant as "little h".
     """
     function InternalUnits(;
-        l_unit::Unitful.Length=L_UNIT,
-        m_unit::Unitful.Mass=M_UNIT,
-        v_unit::Unitful.Velocity=V_UNIT,
+        l_unit::Unitful.Length=ILLUSTRIS_L_UNIT,
+        m_unit::Unitful.Mass=ILLUSTRIS_M_UNIT,
+        v_unit::Unitful.Velocity=ILLUSTRIS_V_UNIT,
         a0::Float64=1.0,
         h0::Float64=1.0,
     )
 
-        ##############################################################################
+        #############################################################################
         # Base units
-        ##############################################################################
+        #############################################################################
 
         x_cgs = l_unit * a0 / h0
         x_cosmo = x_cgs |> u"kpc"
@@ -111,9 +111,9 @@ struct InternalUnits
         m_cgs = m_unit / h0
         m_cosmo = m_cgs |> u"Msun"
 
-        ##############################################################################
+        #############################################################################
         # Derived units
-        ##############################################################################
+        #############################################################################
 
         # Only used in non-cosmological simulations
         t_cgs = x_cgs / v_cgs
@@ -123,8 +123,7 @@ struct InternalUnits
 
         rho_cgs = m_cgs * x_cgs^-3
 
-        # Thermal pressure (it uses v_unit^2 instead of v_cgs^2, 
-		# which would add an extra factor of a0)
+        # Thermal pressure (it uses v_unit^2 instead of v_cgs^2, which would add an extra factor of a0)
         P_Pa = v_unit^2 * m_cgs * x_cgs^-3 |> u"Pa"
 
         new(
@@ -199,7 +198,7 @@ Data in the "Header" group of a HDF5 snapshot file.
 end;
 
 # ╔═╡ 6647922f-bcc9-4438-a454-d8dba7a2d103
-######################################################################################
+#####################################################################################
 # Read IC files which are in the following format:
 #
 # Velocity: km/s
@@ -210,7 +209,7 @@ end;
 # Dark matter halo (halo.dat):  x, y, z, vx, vy, vz, mdark
 # Stellar disk     (disk.dat):  x, y, z, vx, vy, vz, mdisk
 # Stellar bulge    (bulge.dat): x, y, z, vx, vy, vz, mbulge
-######################################################################################
+#####################################################################################
 
 begin
     rawIC_type0 = readdlm("./AGORA_ICs/LOW/gas.dat")
@@ -225,9 +224,9 @@ begin
 end;
 
 # ╔═╡ f3cc08bd-b2c6-42a2-a757-5ef4e7c685e9
-######################################################################################
+#####################################################################################
 # Header
-######################################################################################
+#####################################################################################
 
 header = SnapshotHeader(
     npart                  = Int32[s0, s1, s2, s3, 0, 0],
@@ -238,7 +237,7 @@ header = SnapshotHeader(
         rawIC_type3[1, 7],
         0.0,
         0.0,
-    ] .* 10^9*u"Msun" ./ (M_UNIT |> u"Msun"),
+    ] .* 10^9*u"Msun" ./ (ILLUSTRIS_M_UNIT |> u"Msun"),
     time                   = 0.0,
     z                      = 0.0,
 	flag_sfr               = convert(Int32, 1),
@@ -261,14 +260,14 @@ header = SnapshotHeader(
 );
 
 # ╔═╡ a0f96fb1-8fda-410f-8861-563803f3798e
-######################################################################################
+#####################################################################################
 # Unit struct
-######################################################################################
+#####################################################################################
 
 IU = InternalUnits(; a0=SIM_COSMO ? header.time : 1.0, h0=header.h0);
 
 # ╔═╡ 108bb88d-0d89-4601-a2b2-3af50fcd1f3b
-######################################################################################
+#####################################################################################
 # Write the ICs in HDF5 format for GADGET (SnapFormat = 3)
 #
 # Within each block, the particles will be ordered according to their particle type,
@@ -279,7 +278,7 @@ IU = InternalUnits(; a0=SIM_COSMO ? header.time : 1.0, h0=header.h0);
 # halo  => 1
 # disk  => 2
 # bulge => 3
-######################################################################################
+#####################################################################################
 
 begin
 	# Positions
@@ -357,9 +356,9 @@ begin
 end;
 
 # ╔═╡ 39f2147d-ac35-4b14-ade6-ee07d17f84c6
-######################################################################################
+#####################################################################################
 # Consistency test
-######################################################################################
+#####################################################################################
 
 h5open(out_file * ".hdf5", "r") do fh5
 	hdf5_pos = fh5["PartType0/Coordinates"][150:160, 2] * IU.x_cosmo
@@ -385,17 +384,17 @@ UnitfulAstro = "6112ee07-acf9-5e0f-b108-d242c714bf9f"
 DataFrames = "~1.6.1"
 DelimitedFiles = "~1.9.1"
 HDF5 = "~0.16.12"
-Unitful = "~1.19.0"
-UnitfulAstro = "~1.2.0"
+Unitful = "~1.20.0"
+UnitfulAstro = "~1.2.1"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.10.1"
+julia_version = "1.10.4"
 manifest_format = "2.0"
-project_hash = "36ebcfe09c92e60453b3372d2713b0d2f8ceea9a"
+project_hash = "3faa261cc1fc85a4da6291af58d17a9f3504c5ce"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -409,9 +408,9 @@ uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 
 [[deps.Compat]]
 deps = ["TOML", "UUIDs"]
-git-tree-sha1 = "75bd5b6fc5089df449b5d35fa501c846c9b6549b"
+git-tree-sha1 = "b1c55339b7c6c350ee89f2c1604299660525b248"
 uuid = "34da2185-b29b-5c13-b0c7-acf172513d20"
-version = "4.12.0"
+version = "4.15.0"
 weakdeps = ["Dates", "LinearAlgebra"]
 
     [deps.Compat.extensions]
@@ -420,7 +419,7 @@ weakdeps = ["Dates", "LinearAlgebra"]
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-version = "1.1.0+0"
+version = "1.1.1+0"
 
 [[deps.Crayons]]
 git-tree-sha1 = "249fe38abf76d48563e2f4556bebd215aa317e15"
@@ -440,9 +439,9 @@ version = "1.6.1"
 
 [[deps.DataStructures]]
 deps = ["Compat", "InteractiveUtils", "OrderedCollections"]
-git-tree-sha1 = "ac67408d9ddf207de5cfa9a97e114352430f01ed"
+git-tree-sha1 = "1d0a14036acb104d9e89698bd408f63ab58cdc82"
 uuid = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
-version = "0.18.16"
+version = "0.18.20"
 
 [[deps.DataValueInterfaces]]
 git-tree-sha1 = "bfc1187b79289637fa0ef6d4436ebdfe6905cbd6"
@@ -479,21 +478,27 @@ version = "0.16.16"
 
 [[deps.HDF5_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LazyArtifacts", "LibCURL_jll", "Libdl", "MPICH_jll", "MPIPreferences", "MPItrampoline_jll", "MicrosoftMPI_jll", "OpenMPI_jll", "OpenSSL_jll", "TOML", "Zlib_jll", "libaec_jll"]
-git-tree-sha1 = "e4591176488495bf44d7456bd73179d87d5e6eab"
+git-tree-sha1 = "82a471768b513dc39e471540fdadc84ff80ff997"
 uuid = "0234f1f7-429e-5d53-9886-15a909be8d59"
-version = "1.14.3+1"
+version = "1.14.3+3"
 
 [[deps.Hwloc_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "ca0f6bf568b4bfc807e7537f081c81e35ceca114"
+git-tree-sha1 = "1d334207121865ac8c1c97eb7f42d0339e4635bf"
 uuid = "e33a78d0-f292-5ffc-b300-72abe9b543c8"
-version = "2.10.0+0"
+version = "2.11.0+0"
 
 [[deps.InlineStrings]]
 deps = ["Parsers"]
-git-tree-sha1 = "9cc2baf75c6d09f9da536ddf58eb2f29dedaf461"
+git-tree-sha1 = "86356004f30f8e737eff143d57d41bd580e437aa"
 uuid = "842dd82b-1e85-43dc-bf29-5d0ee9dffc48"
-version = "1.4.0"
+version = "1.4.1"
+
+    [deps.InlineStrings.extensions]
+    ArrowTypesExt = "ArrowTypes"
+
+    [deps.InlineStrings.weakdeps]
+    ArrowTypes = "31f734f8-188a-4ce0-8406-c8a06bd891cd"
 
 [[deps.InteractiveUtils]]
 deps = ["Markdown"]
@@ -560,21 +565,21 @@ uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [[deps.MPICH_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Hwloc_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "MPIPreferences", "TOML"]
-git-tree-sha1 = "656036b9ed6f942d35e536e249600bc31d0f9df8"
+git-tree-sha1 = "4099bb6809ac109bfc17d521dad33763bcf026b7"
 uuid = "7cb0a576-ebde-5e09-9194-50597f1243b4"
-version = "4.2.0+0"
+version = "4.2.1+1"
 
 [[deps.MPIPreferences]]
 deps = ["Libdl", "Preferences"]
-git-tree-sha1 = "8f6af051b9e8ec597fa09d8885ed79fd582f33c9"
+git-tree-sha1 = "c105fe467859e7f6e9a852cb15cb4301126fac07"
 uuid = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
-version = "0.1.10"
+version = "0.1.11"
 
 [[deps.MPItrampoline_jll]]
-deps = ["Artifacts", "CompilerSupportLibraries_jll", "Hwloc_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "MPIPreferences", "TOML"]
-git-tree-sha1 = "77c3bd69fdb024d75af38713e883d0f249ce19c2"
+deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LazyArtifacts", "Libdl", "MPIPreferences", "TOML"]
+git-tree-sha1 = "8c35d5420193841b2f367e658540e8d9e0601ed0"
 uuid = "f1f71cc9-e9ae-5b93-9b94-4fe0e1ad3748"
-version = "5.3.2+0"
+version = "5.4.0+0"
 
 [[deps.Markdown]]
 deps = ["Base64"]
@@ -593,9 +598,9 @@ version = "10.1.4+2"
 
 [[deps.Missings]]
 deps = ["DataAPI"]
-git-tree-sha1 = "f66bdc5de519e8f8ae43bdc598782d35a25b1272"
+git-tree-sha1 = "ec4f7fbeab05d7747bdf98eb74d130a2a2ed298d"
 uuid = "e1d29d7a-bbdc-5cf2-9ac0-f12de2c33e28"
-version = "1.1.0"
+version = "1.2.0"
 
 [[deps.Mmap]]
 uuid = "a63ad114-7e13-5084-954f-fe012c677804"
@@ -621,9 +626,9 @@ version = "4.1.6+0"
 
 [[deps.OpenSSL_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "60e3045590bd104a16fefb12836c00c0ef8c7f8c"
+git-tree-sha1 = "a028ee3cb5641cccc4c24e90c36b0a4f7707bdf5"
 uuid = "458c3c95-2e84-50aa-8efc-19380b2a3a95"
-version = "3.0.13+0"
+version = "3.0.14+0"
 
 [[deps.OrderedCollections]]
 git-tree-sha1 = "dfdf5519f235516220579f949664f1bf44e741c5"
@@ -649,21 +654,21 @@ version = "1.4.3"
 
 [[deps.PrecompileTools]]
 deps = ["Preferences"]
-git-tree-sha1 = "03b4c25b43cb84cee5c90aa9b5ea0a78fd848d2f"
+git-tree-sha1 = "5aa36f7049a63a1528fe8f7c3f2113413ffd4e1f"
 uuid = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
-version = "1.2.0"
+version = "1.2.1"
 
 [[deps.Preferences]]
 deps = ["TOML"]
-git-tree-sha1 = "00805cd429dcb4870060ff49ef443486c262e38e"
+git-tree-sha1 = "9306f6085165d270f7e3db02af26a400d580f5c6"
 uuid = "21216c6a-2e73-6563-6e65-726566657250"
-version = "1.4.1"
+version = "1.4.3"
 
 [[deps.PrettyTables]]
 deps = ["Crayons", "LaTeXStrings", "Markdown", "PrecompileTools", "Printf", "Reexport", "StringManipulation", "Tables"]
-git-tree-sha1 = "88b895d13d53b5577fd53379d913b9ab9ac82660"
+git-tree-sha1 = "66b20dd35966a748321d3b2537c4584cf40387c7"
 uuid = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
-version = "2.3.1"
+version = "2.3.2"
 
 [[deps.Printf]]
 deps = ["Unicode"]
@@ -694,9 +699,9 @@ version = "0.7.0"
 
 [[deps.SentinelArrays]]
 deps = ["Dates", "Random"]
-git-tree-sha1 = "0e7508ff27ba32f26cd459474ca2ede1bc10991f"
+git-tree-sha1 = "90b4f68892337554d31cdcdbe19e48989f26c7e6"
 uuid = "91c51154-3ec4-41a3-a24f-3f23e20d615c"
-version = "1.4.1"
+version = "1.4.3"
 
 [[deps.Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
@@ -762,9 +767,9 @@ uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
 [[deps.Unitful]]
 deps = ["Dates", "LinearAlgebra", "Random"]
-git-tree-sha1 = "3c793be6df9dd77a0cf49d80984ef9ff996948fa"
+git-tree-sha1 = "dd260903fdabea27d9b6021689b3cd5401a57748"
 uuid = "1986cc42-f94f-5a68-af5c-568840ba703d"
-version = "1.19.0"
+version = "1.20.0"
 
     [deps.Unitful.extensions]
     ConstructionBaseUnitfulExt = "ConstructionBase"
@@ -776,15 +781,15 @@ version = "1.19.0"
 
 [[deps.UnitfulAngles]]
 deps = ["Dates", "Unitful"]
-git-tree-sha1 = "d6cfdb6ddeb388af1aea38d2b9905fa014d92d98"
+git-tree-sha1 = "79875b1f2e4bf918f0702a5980816955066d9ae2"
 uuid = "6fb2a4bd-7999-5318-a3b2-8ad61056cd98"
-version = "0.6.2"
+version = "0.7.2"
 
 [[deps.UnitfulAstro]]
 deps = ["Unitful", "UnitfulAngles"]
-git-tree-sha1 = "05adf5e3a3bd1038dd50ff6760cddd42380a7260"
+git-tree-sha1 = "da7577e6a726959b14f7451674d00b78d10ca30f"
 uuid = "6112ee07-acf9-5e0f-b108-d242c714bf9f"
-version = "1.2.0"
+version = "1.2.1"
 
 [[deps.Zlib_jll]]
 deps = ["Libdl"]
@@ -793,9 +798,9 @@ version = "1.2.13+1"
 
 [[deps.libaec_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "eddd19a8dea6b139ea97bdc8a0e2667d4b661720"
+git-tree-sha1 = "46bf7be2917b59b761247be3f317ddf75e50e997"
 uuid = "477f73a3-ac25-53e9-8cc3-50b2fa2566f0"
-version = "1.0.6+1"
+version = "1.1.2+0"
 
 [[deps.libblastrampoline_jll]]
 deps = ["Artifacts", "Libdl"]
